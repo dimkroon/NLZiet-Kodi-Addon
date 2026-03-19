@@ -5,7 +5,7 @@
 # <span style="color:#E60000;">NLZiet Kodi Addon</span>
 
 [![GitHub stars](https://img.shields.io/github/stars/Nigel1992/NLZiet-Kodi-Addon?style=social)](https://github.com/Nigel1992/NLZiet-Kodi-Addon)
-[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 <sub><sup>Unofficial NLZiet Kodi Addon &mdash; Watch live TV, series, movies, and more from NLZiet directly in Kodi. Supports profiles, DRM, and a modern UI.</sup></sub>
 
@@ -13,20 +13,7 @@
 
 ---
 
-## 💬 Community
-
-Join our friendly Discord to discuss the add-on, get help, suggest features, and meet other users — everyone is welcome. Click below to join:
-
-[Join our Discord](https://discord.gg/GHAxWChXpn)
-
----
-
 > ⚠️ **Warning:** This add-on is under constant development. Some features may be broken or incomplete. Please see the To-Do section below for known issues and planned improvements. Use at your own risk and check back for frequent updates!
->
-> 🚧 **Known Limitations:**
-> - **Search**: implemented for Series and Movies (v0.0.2). Episodes and edge cases may still require improvements.
-> - **Categories for movies and series** will be added in a future update.
-> - **Full EPG guide** and advanced TV features are planned but not yet available.
 
 ---
 
@@ -56,34 +43,10 @@ Join our friendly Discord to discuss the add-on, get help, suggest features, and
 
 ## 🚀 Installation
 
-Quick install (recommended)
-
 1. Download the latest release from [GitHub Releases](https://github.com/Nigel1992/NLZiet-Kodi-Addon/releases).
-2. If this is a third-party add-on for you, enable installation from unknown sources: go to Settings → System → Add-ons and enable **Unknown sources**.
-3. In Kodi, go to **Add-ons > Install from zip file** and select the downloaded ZIP to install the add-on.
-4. Open the NLZiet add-on, go to its Settings, enter your NLZiet credentials and press **Login** from the main menu.
-
-Enable DRM playback (InputStream Adaptive + Widevine)
-
-1. Enable InputStream Adaptive
-  - Go to **Add-ons > My add-ons > VideoPlayer InputStream**.
-  - Select **InputStream Adaptive**. If it is not installed, install it from the Kodi Add-on Repository.
-  - Click **Enable** (or **Open**) so Kodi can use it for adaptive DRM streams.
-
-2. Install Widevine CDM (use InputStream Helper — recommended)
-  - Install **InputStream Helper**: go to **Add-ons > Install from repository > Kodi Add-on Repository > Program add-ons > InputStream Helper** and install it.
-  - Open **InputStream Helper** (Add-ons > Program add-ons > InputStream Helper) and choose **Install/Update Widevine CDM**.
-  - Follow the on-screen prompts. InputStream Helper will download the correct Widevine CDM for your device and install it in the right location for Kodi.
-  - Reboot Kodi after installation if prompted.
-
-3. Test playback
-  - Play a DRM-protected title from NLZiet. The add-on will automatically use `inputstream.adaptive` and Widevine for playback when available.
-
-Notes & troubleshooting
-- Widevine availability depends on your device and OS. InputStream Helper will report if Widevine cannot be installed for your platform.
-- If playback fails, enable debug logging (Settings → System → Logging), reproduce the issue, and check the Kodi log for lines mentioning `inputstream.adaptive` or `widevine`.
-- InputStream Helper also shows the path where the CDM was installed; use that information if you need to perform an advanced/manual install.
-- For headless or minimal systems (LibreELEC/CoreELEC), prefer InputStream Helper or consult your distribution's wiki for device-specific Widevine instructions.
+2. In Kodi, go to **Add-ons > Install from zip file** and select the downloaded zip.
+3. Configure your NLZiet credentials in the add-on settings.
+4. (Optional) Install `inputstream.adaptive` for DRM playback.
 
 ---
 
@@ -122,7 +85,7 @@ Pull requests, bug reports, and feature suggestions are welcome! See [CONTRIBUTI
 
 ## 📄 License
 
-Creative Commons Attribution-NonCommercial 4.0 International. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 ---
 
