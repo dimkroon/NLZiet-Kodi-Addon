@@ -1,4 +1,5 @@
 import sys
+import re
 import urllib.parse
 import os
 import xbmc
@@ -60,6 +61,56 @@ def add_directory_item(title, query, is_folder=True, thumb=None, info=None):
     xbmcplugin.addDirectoryItem(HANDLE, url, li, isFolder=is_folder)
 
 
+def _pick_landscape_thumb(src):
+    """Return the best landscape-oriented thumbnail or path for an item.
+
+    Accepts either a string URL/path or a dict-like content item. Prefers
+    explicit landscape keys, then common wide/hero/poster keys, and finally
+    falls back to any url-like string found on the object.
+    """
+    if not src:
+        return None
+    if isinstance(src, str):
+        return src
+    try:
+        # Prefer explicit landscape / wide keys first
+        for k in ('landscapeUrl', 'landscape', 'thumbnailLandscape', 'thumbnail_landscape', 'posterLandscape', 'poster_landscape', 'heroImage', 'heroImageUrl', 'widePosterUrl'):
+            v = src.get(k)
+            if isinstance(v, str) and v:
+                return v
+
+        # Common poster/thumbnail fields (posterUrl may be portrait but is a useful fallback)
+        for k in ('posterUrl', 'poster', 'thumbnail', 'thumb'):
+            v = src.get(k)
+            if isinstance(v, str) and v:
+                return v
+
+        # Check nested image dicts for landscape keys
+        for img_key in ('image', 'images'):
+            img = src.get(img_key)
+            if isinstance(img, dict):
+                for k in ('landscapeUrl', 'landscape', 'landscape_url', 'wide', 'wideUrl', 'large', 'largeUrl', 'posterUrl', 'thumbnail', 'thumb'):
+                    v = img.get(k)
+                    if isinstance(v, str) and v:
+                        return v
+                for kk, vv in img.items():
+                    if isinstance(kk, str) and 'landscape' in kk.lower() and isinstance(vv, str) and vv:
+                        return vv
+
+        # Any key name containing 'landscape' on the top-level
+        for kk, vv in src.items():
+            if isinstance(kk, str) and 'landscape' in kk.lower() and isinstance(vv, str) and vv:
+                return vv
+
+        # As a final fallback, return any url-like string value
+        for vv in src.values():
+            if isinstance(vv, str) and (vv.startswith('http://') or vv.startswith('https://') or vv.startswith('file://')):
+                return vv
+    except Exception:
+        pass
+    return None
+
+
 def main_menu():
     try:
         addon_path = ADDON.getAddonInfo('path') or ''
@@ -116,6 +167,14 @@ def browse_series():
         for idx, comp in enumerate(comps):
             try:
                 comp_title = comp.get('title') or comp.get('name') or comp.get('id') or f"Row {idx+1}"
+                # Skip placement rows we don't want in the Series submenu
+                try:
+                    comp_id = comp.get('id') or comp.get('placementId') or comp.get('name') or ''
+                except Exception:
+                    comp_id = ''
+                lower_title = str(comp_title).strip().lower()
+                if lower_title == 'series' or str(comp_id).lower() == 'explore-series-genres':
+                    continue
                 items_url = comp.get('itemsUrl') or comp.get('url') or (comp.get('link', {}) or {}).get('href') if isinstance(comp.get('link', {}), dict) else comp.get('itemsUrl')
                 # Provide a folder that opens the row contents. If the component
                 # exposes an itemsUrl we pass it directly; otherwise we pass the
@@ -148,7 +207,7 @@ def browse_series():
                 }
         except Exception:
             info = None
-        add_directory_item(item.get('title') or item.get('id') or 'Series', {'mode': 'series_detail', 'series_id': item.get('id')}, is_folder=True, thumb=item.get('thumb'), info=info)
+        add_directory_item(item.get('title') or item.get('id') or 'Series', {'mode': 'series_detail', 'series_id': item.get('id')}, is_folder=True, thumb=_pick_landscape_thumb(item), info=info)
     xbmcplugin.endOfDirectory(HANDLE)
 
 
@@ -181,7 +240,17 @@ def show_series_season(series_id, season_id):
     username = ADDON.getSetting('username')
     password = ADDON.getSetting('password')
     api = NLZietAPI(username=username, password=password)
+    xbmc.log(f"NLZiet show_series_season: series_id={series_id} season_id={season_id}", xbmc.LOGDEBUG)
     episodes = api.get_series_episodes(series_id, season_id=season_id or None, limit=400)
+    # If the API returned no episodes, but the `season_id` appears to be
+    # an items/episodes URL, attempt to fetch items directly from that URL
+    # (some detail payloads expose an `episodes_url` instead of numeric ids).
+    if not episodes and season_id and isinstance(season_id, str) and (season_id.startswith('http') or '/episodes' in season_id or 'items' in season_id):
+        try:
+            xbmc.log(f"NLZiet attempting fallback get_items_from_url for season_id={season_id}", xbmc.LOGDEBUG)
+            episodes = api.get_items_from_url(season_id) or []
+        except Exception:
+            episodes = []
     if not episodes:
         xbmcgui.Dialog().notification('NLZiet', 'No episodes found', xbmcgui.NOTIFICATION_INFO)
         return
@@ -200,10 +269,47 @@ def show_series_season(series_id, season_id):
         except Exception:
             info = None
 
-        # Prefer an already-formatted episode numbering string when available
+        # Prefer an already-formatted episode numbering string when available.
+        # First, prefer subtitle patterns like 'S1:A2' (some payloads include
+        # this canonical format in `subtitle`). If present, use it as
+        # "S1:A2 <Episode Title>". Otherwise fall back to the API's
+        # formatted label or numeric SxxExx formatting.
         formatted_label = ep.get('formatted_episode_numbering') or ep.get('formattedEpisodeNumbering') or (ep.get('raw') or {}).get('formattedEpisodeNumbering')
         label_title = ep.get('title') or ''
-        if formatted_label:
+
+        # Check subtitle for the canonical 'S{n}:A{m}' pattern (e.g. 'S1:A2 Secrets').
+        # If present, extract the remainder of the subtitle after the code and
+        # prefer that as the human-friendly episode title ("S1:A2 <ep title>").
+        subtitle_code = None
+        try:
+            sub = ep.get('subtitle') or ''
+            if sub and isinstance(sub, str):
+                m = re.search(r"\bS\d+:A\d+\b", sub, re.I)
+                if m:
+                    subtitle_code = m.group(0)
+                    # remainder after the matched code
+                    remainder = sub[m.end():].strip()
+                    # strip common separators (colon, dash, en-dash, em-dash)
+                    remainder = re.sub(r'^[\s\-:\u2013\u2014]+', '', remainder)
+                else:
+                    remainder = ''
+            else:
+                remainder = ''
+        except Exception:
+            subtitle_code = None
+            remainder = ''
+
+        if subtitle_code:
+            if remainder:
+                label = f"{subtitle_code} {remainder}"
+            else:
+                # no explicit episode title in subtitle, show code and fall back to series title if available
+                label = f"{subtitle_code} - {label_title}" if label_title else subtitle_code
+        elif sub and isinstance(sub, str) and sub.strip():
+            # subtitle exists but contains no S#:A# code — use the subtitle as
+            # the human-friendly episode title (e.g. 'Korfspiracy').
+            label = sub.strip()
+        elif formatted_label:
             # Use the canonical formatted label from the API/app when present
             label = f"{formatted_label} - {label_title}" if label_title else formatted_label
         else:
@@ -228,7 +334,7 @@ def show_series_season(series_id, season_id):
             else:
                 label = label or ep.get('id') or 'Episode'
 
-        add_directory_item(label, {'mode': 'play', 'id': ep.get('id')}, is_folder=False, thumb=ep.get('thumb'), info=info)
+        add_directory_item(label, {'mode': 'play', 'id': ep.get('id')}, is_folder=False, thumb=_pick_landscape_thumb(ep), info=info)
     xbmcplugin.endOfDirectory(HANDLE)
 
 
@@ -274,7 +380,7 @@ def browse_placement_row(items_url=None, placement_id=None, comp_index=None):
         try:
             content_id = src.get('id') or src.get('contentId') or src.get('content_id') or src.get('seriesId') or src.get('movieId') or src.get('assetId')
             title = src.get('title') or src.get('name') or ''
-            thumb = src.get('posterUrl') or (src.get('image') or {}).get('portraitUrl') or (src.get('image') or {}).get('landscapeUrl') or src.get('thumb') or src.get('thumbnail')
+            thumb = _pick_landscape_thumb(src)
             desc = src.get('description') or src.get('summary') or ''
             info = None
             if desc:
@@ -501,7 +607,7 @@ def do_search():
         fb = []
         ql = (query or '').lower()
         try:
-            sers = api.get_series_list(limit=200) or []
+            sers = api.get_series_list(limit=999) or []
             for s in sers:
                 try:
                     t = (s.get('title') or '')
@@ -539,6 +645,64 @@ def do_search():
             xbmcgui.Dialog().notification('NLZiet', f'No results for "{query}"', xbmcgui.NOTIFICATION_INFO)
             xbmcplugin.endOfDirectory(HANDLE)
             return
+    # Group search results by their detected type so we can present grouped
+    # folders (e.g. "Series" and "Movies") when multiple groups are found.
+    group_map = {}
+    for item in results:
+        try:
+            content_id = item.get('id') or item.get('contentId') or item.get('content_id')
+        except Exception:
+            content_id = None
+        try:
+            itype = item.get('type') or ''
+            itype_l = (str(itype).lower() if itype else '')
+        except Exception:
+            itype_l = ''
+
+        if not itype_l and content_id:
+            try:
+                det = api.get_content_detail(content_id) or {}
+                raw = det.get('raw') or {}
+                itype_l = (str(raw.get('type') or '')).lower()
+            except Exception:
+                itype_l = itype_l
+
+        group = None
+        if 'series' in itype_l or 'tvshow' in itype_l:
+            group = 'Series'
+        elif 'episode' in itype_l:
+            group = 'Episodes'
+        elif 'movie' in itype_l or 'film' in itype_l:
+            group = 'Movies'
+        elif 'channel' in itype_l or 'live' in itype_l:
+            group = 'Channels'
+        else:
+            sid = item.get('seriesId') or (item.get('raw') or {}).get('seriesId') if isinstance(item.get('raw', {}), dict) else None
+            if sid:
+                group = 'Series'
+            else:
+                group = 'Other'
+
+        group_map.setdefault(group, []).append(item)
+
+    non_empty = [g for g, v in group_map.items() if v]
+    # If results span multiple groups, present top-level folders for each group
+    # so the user can open e.g. "Series" or "Movies" individually.
+    if len(non_empty) > 1:
+        for g in non_empty:
+            items_for_group = group_map.get(g) or []
+            thumb = None
+            try:
+                first = items_for_group[0] if items_for_group else None
+                thumb = _pick_landscape_thumb(first) if first else None
+            except Exception:
+                thumb = None
+            label = f"{g}: {len(items_for_group)} found"
+            add_directory_item(label, {'mode': 'search_group', 'q': query, 'group': g}, is_folder=True, thumb=thumb)
+        xbmcplugin.endOfDirectory(HANDLE)
+        return
+
+    # Otherwise fall back to presenting each result individually (previous behavior)
     for item in results:
         info = None
         try:
@@ -601,27 +765,44 @@ def do_search():
                 itype_l = itype_l
 
         title = item.get('title') or item.get('name') or content_id or 'Result'
-        thumb = item.get('thumb') or item.get('posterUrl')
+        thumb = _pick_landscape_thumb(item)
+
+        # Determine a simple group label so search results indicate their type
+        group = None
+        if 'series' in itype_l or 'tvshow' in itype_l:
+            group = 'Series'
+        elif 'episode' in itype_l:
+            group = 'Episodes'
+        elif 'movie' in itype_l or 'film' in itype_l:
+            group = 'Movies'
+        elif 'channel' in itype_l or 'live' in itype_l:
+            group = 'Channels'
+        else:
+            sid = item.get('seriesId') or (item.get('raw') or {}).get('seriesId') if isinstance(item.get('raw', {}), dict) else None
+            if sid:
+                group = 'Series'
+
+        display_title = f"{group}: {title}" if group else title
 
         # Series / TV show -> open series detail (folder)
         if 'series' in itype_l or 'tvshow' in itype_l:
-            add_directory_item(title, {'mode': 'series_detail', 'series_id': content_id}, is_folder=True, thumb=thumb, info=info)
+            add_directory_item(display_title, {'mode': 'series_detail', 'series_id': content_id}, is_folder=True, thumb=thumb, info=info)
         # Episode -> playable
         elif 'episode' in itype_l:
-            add_directory_item(title, {'mode': 'play', 'id': item.get('id')}, is_folder=False, thumb=thumb, info=info)
+            add_directory_item(display_title, {'mode': 'play', 'id': item.get('id')}, is_folder=False, thumb=thumb, info=info)
         # Movie -> playable
         elif 'movie' in itype_l or 'film' in itype_l:
-            add_directory_item(title, {'mode': 'play', 'id': item.get('id')}, is_folder=False, thumb=thumb, info=info)
+            add_directory_item(display_title, {'mode': 'play', 'id': item.get('id')}, is_folder=False, thumb=thumb, info=info)
         # Channel / Live -> play as live
         elif 'channel' in itype_l or 'live' in itype_l:
-            add_directory_item(title, {'mode': 'play', 'id': item.get('id'), 'fmt': 'live'}, is_folder=False, thumb=thumb, info=info)
+            add_directory_item(display_title, {'mode': 'play', 'id': item.get('id'), 'fmt': 'live'}, is_folder=False, thumb=thumb, info=info)
         else:
             # fallback: treat as series if a seriesId exists, otherwise play
             sid = item.get('seriesId') or (item.get('raw') or {}).get('seriesId') if isinstance(item.get('raw', {}), dict) else None
             if sid:
-                add_directory_item(title, {'mode': 'series_detail', 'series_id': sid}, is_folder=True, thumb=thumb, info=info)
+                add_directory_item(display_title, {'mode': 'series_detail', 'series_id': sid}, is_folder=True, thumb=thumb, info=info)
             else:
-                add_directory_item(title, {'mode': 'play', 'id': item.get('id') or content_id}, is_folder=False, thumb=thumb, info=info)
+                add_directory_item(display_title, {'mode': 'play', 'id': item.get('id') or content_id}, is_folder=False, thumb=thumb, info=info)
     xbmcplugin.endOfDirectory(HANDLE)
 
 
@@ -778,7 +959,158 @@ def browse_category(content_type):
         query = {'mode': 'play', 'id': item.get('id')}
         if content_type.lower() == 'channels':
             query['fmt'] = 'live'
-        add_directory_item(item.get('title'), query, is_folder=False, thumb=item.get('thumb'), info=info)
+        add_directory_item(item.get('title'), query, is_folder=False, thumb=_pick_landscape_thumb(item), info=info)
+    xbmcplugin.endOfDirectory(HANDLE)
+
+
+def search_group(q, group):
+    """Show search results filtered to a single group (e.g. 'Series' or 'Movies').
+
+    This re-runs the search (or fallback) and presents only items that match
+    the requested group name.
+    """
+    if not q:
+        xbmcgui.Dialog().notification('NLZiet', 'Missing search query', xbmcgui.NOTIFICATION_INFO)
+        return
+
+    username = ADDON.getSetting('username')
+    password = ADDON.getSetting('password')
+    api = NLZietAPI(username=username, password=password)
+    results = api.search(q)
+    if not results:
+        fb = []
+        ql = (q or '').lower()
+        try:
+            sers = api.get_series_list(limit=999) or []
+            for s in sers:
+                try:
+                    t = (s.get('title') or '')
+                    if ql and ql in t.lower():
+                        fb.append(s)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        try:
+            movs = api.get_movies() or []
+            for m in movs:
+                try:
+                    t = (m.get('title') or '')
+                    if ql and ql in t.lower():
+                        fb.append(m)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        try:
+            chs = api.get_channels() or []
+            for c in chs:
+                try:
+                    t = (c.get('title') or '')
+                    if ql and ql in t.lower():
+                        fb.append(c)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        if fb:
+            results = fb
+        else:
+            xbmcgui.Dialog().notification('NLZiet', f'No results for "{q}"', xbmcgui.NOTIFICATION_INFO)
+            xbmcplugin.endOfDirectory(HANDLE)
+            return
+
+    # Present only items that match the requested group
+    for item in results:
+        info = None
+        try:
+            desc = item.get('description') or item.get('subtitle') or ''
+            if desc:
+                title_for_info = item.get('title') or ''
+                expiry_text = item.get('expires_in') or None
+                truncated = (desc[:250] + '...') if len(desc) > 250 else desc
+                plot_full = desc
+                po = truncated
+                if expiry_text:
+                    marker = '🔶 '
+                    colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
+                    plot_full = f"{colored}\n{desc}" if desc else colored
+                    po = f"{marker}{expiry_text} — {truncated}" if truncated else f"{marker}{expiry_text}"
+                info = {'title': title_for_info, 'plot': plot_full, 'plotoutline': po}
+            else:
+                cid = item.get('id')
+                if cid:
+                    detail = api.get_content_detail(cid)
+                    if detail:
+                        desc = detail.get('description') or detail.get('plot') or ''
+                        expiry_text = detail.get('expires_in') or None
+                        title_for_info = detail.get('title') or item.get('title') or ''
+                        if desc:
+                            truncated = (desc[:250] + '...') if len(desc) > 250 else desc
+                            plot_full = desc
+                            po = truncated
+                            if expiry_text:
+                                marker = '🔶 '
+                                colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
+                                plot_full = f"{colored}\n{desc}" if desc else colored
+                                po = f"{marker}{expiry_text} — {truncated}" if truncated else f"{marker}{expiry_text}"
+                            info = {'title': title_for_info, 'plot': plot_full, 'plotoutline': po}
+        except Exception:
+            info = None
+
+        content_id = item.get('id') or item.get('contentId') or item.get('content_id')
+        itype = item.get('type') or ''
+        itype_l = (str(itype).lower() if itype else '')
+
+        if not itype_l and content_id:
+            try:
+                det = api.get_content_detail(content_id) or {}
+                raw = det.get('raw') or {}
+                itype_l = (str(raw.get('type') or '')).lower()
+            except Exception:
+                itype_l = itype_l
+
+        # compute group and skip items that don't match
+        group_name = None
+        if 'series' in itype_l or 'tvshow' in itype_l:
+            group_name = 'Series'
+        elif 'episode' in itype_l:
+            group_name = 'Episodes'
+        elif 'movie' in itype_l or 'film' in itype_l:
+            group_name = 'Movies'
+        elif 'channel' in itype_l or 'live' in itype_l:
+            group_name = 'Channels'
+        else:
+            sid = item.get('seriesId') or (item.get('raw') or {}).get('seriesId') if isinstance(item.get('raw', {}), dict) else None
+            if sid:
+                group_name = 'Series'
+            else:
+                group_name = 'Other'
+
+        if not group_name or str(group_name).lower() != (str(group or '').lower()):
+            continue
+
+        title = item.get('title') or item.get('name') or content_id or 'Result'
+        thumb = _pick_landscape_thumb(item)
+
+        # Inside a search-group listing we show plain titles; the group
+        # context is already provided by the parent folder label.
+        display_title = title
+
+        if 'series' in itype_l or 'tvshow' in itype_l:
+            add_directory_item(display_title, {'mode': 'series_detail', 'series_id': content_id}, is_folder=True, thumb=thumb, info=info)
+        elif 'episode' in itype_l:
+            add_directory_item(display_title, {'mode': 'play', 'id': item.get('id')}, is_folder=False, thumb=thumb, info=info)
+        elif 'movie' in itype_l or 'film' in itype_l:
+            add_directory_item(display_title, {'mode': 'play', 'id': item.get('id')}, is_folder=False, thumb=thumb, info=info)
+        elif 'channel' in itype_l or 'live' in itype_l:
+            add_directory_item(display_title, {'mode': 'play', 'id': item.get('id'), 'fmt': 'live'}, is_folder=False, thumb=thumb, info=info)
+        else:
+            sid = item.get('seriesId') or (item.get('raw') or {}).get('seriesId') if isinstance(item.get('raw', {}), dict) else None
+            if sid:
+                add_directory_item(display_title, {'mode': 'series_detail', 'series_id': sid}, is_folder=True, thumb=thumb, info=info)
+            else:
+                add_directory_item(display_title, {'mode': 'play', 'id': item.get('id') or content_id}, is_folder=False, thumb=thumb, info=info)
     xbmcplugin.endOfDirectory(HANDLE)
 
 
@@ -981,6 +1313,8 @@ def router(paramstring):
         apply_profile()
     elif mode == 'series':
         browse_series()
+    elif mode == 'search_group':
+        search_group(params.get('q'), params.get('group'))
     elif mode == 'series_detail':
         show_series_detail(params.get('series_id'))
     elif mode == 'series_season':

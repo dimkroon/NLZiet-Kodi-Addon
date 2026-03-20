@@ -445,6 +445,12 @@ class NLZietAPI:
             token = self.get_access_token()
             if token:
                 headers['Authorization'] = 'Bearer ' + token
+            # Debug: record the constructed episodes URL and headers
+            try:
+                self._append_debug(f"get_series_episodes request URL: {url}")
+                self._append_debug(f"get_series_episodes headers: {headers}")
+            except Exception:
+                pass
             req = urllib.request.Request(url, headers=headers)
             with self._open_with_opener(self.opener, req, timeout=20) as r:
                 data = json.load(r)
@@ -1621,7 +1627,7 @@ class NLZietAPI:
             xbmc.log(traceback.format_exc(), xbmc.LOGERROR)
             return {}
 
-    def get_series_list(self, limit=50, offset=0):
+    def get_series_list(self, limit=999, offset=0):
         """Return a flat list of series using the recommend/filtered Series endpoint.
 
         Each item mirrors the shape used by get_movies/search: dict with
@@ -1777,8 +1783,28 @@ class NLZietAPI:
         if not url:
             return []
         try:
-            # Accept relative URLs too
+            # Accept relative URLs too; coerce recommend endpoints to request more items.
             full = url if url.startswith('http') else urllib.parse.urljoin(self.base_url, url)
+            try:
+                parsed = urllib.parse.urlparse(full)
+                path = parsed.path or ''
+                # Only adjust known recommend endpoints and only when a limit
+                # query parameter is explicitly present to avoid altering
+                # unrelated URLs or nested/encoded queries.
+                if 'recommend/withcontext' in path or 'recommend/filtered' in path:
+                    qs = urllib.parse.parse_qs(parsed.query)
+                    if 'limit' in qs:
+                        try:
+                            cur = int(qs.get('limit', ['0'])[0])
+                        except Exception:
+                            cur = 0
+                        if cur < 999:
+                            qs['limit'] = ['999']
+                            new_q = urllib.parse.urlencode(qs, doseq=True)
+                            parsed = parsed._replace(query=new_q)
+                            full = urllib.parse.urlunparse(parsed)
+            except Exception:
+                pass
             headers = {
                 'User-Agent': self.user_agent,
                 'Accept': 'application/json, text/plain, */*',
@@ -1947,7 +1973,7 @@ class NLZietAPI:
             xbmc.log(f"NLZiet get_series_detail error for id={series_id}: {e}", xbmc.LOGERROR)
             return {}
 
-    def get_series_episodes(self, series_id, season_id=None, limit=50, offset=0):
+    def get_series_episodes(self, series_id, season_id=None, limit=400, offset=0):
         """Return episodes for a series/season using /v9/series/{id}/episodes."""
         if not series_id:
             return []
