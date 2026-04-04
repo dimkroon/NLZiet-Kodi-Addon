@@ -1,6 +1,7 @@
 ---
 name: Support / Help Needed
 description: Ask for help or report a general issue that's not a bug
+about: Get help with setup, usage, or general questions
 title: "[HELP] "
 labels: ["question"]
 ---

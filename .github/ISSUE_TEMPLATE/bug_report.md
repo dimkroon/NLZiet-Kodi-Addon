@@ -1,6 +1,7 @@
 ---
 name: Bug Report
 description: Report a bug or issue with the NLZiet Kodi addon
+about: Report a bug or technical issue
 title: "[BUG] "
 labels: ["bug"]
 ---
