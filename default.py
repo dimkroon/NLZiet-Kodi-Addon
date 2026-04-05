@@ -164,7 +164,7 @@ def build_url(query):
 
 def add_directory_item(title, query, is_folder=True, thumb=None, info=None, content=None):
     url = build_url(query)
-    li = xbmcgui.ListItem(label=title)
+    li = xbmcgui.ListItem(label=title, offscreen=True)
     if thumb or content:
         # Use smart artwork assignment to respect aspect ratios
         # Prevents face-cutting and image stretching by assigning portraits to poster, landscapes to fanart
@@ -2338,7 +2338,7 @@ def play_item(content_id, fmt=None):
     if info.get('is_drm'):
         if not ensure_inputstream_for_drm():
             return
-        li = xbmcgui.ListItem(path=manifest)
+        li = xbmcgui.ListItem(path=manifest, offscreen=True)
         # prefer new property if available
         li.setProperty('inputstream', 'inputstream.adaptive')
         li.setProperty('inputstream.adaptive.manifest_type', 'mpd')
