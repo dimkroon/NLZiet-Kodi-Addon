@@ -2,6 +2,33 @@
 
 All notable changes to this project are recorded in this file.
 
+## [Unreleased]
+
+### Added
+- **Subscription Account Details Display**: Settings now show account subscription information including subscription type, expiry date, and maximum devices allowed.
+- **Background Settings Monitor Service**: Real-time detection of language setting changes with immediate restart notification popup, eliminating need for manual reload/restart checks.
+- **Account Settings Group**: New dedicated Account section in settings menu displaying subscription status and providing refresh/logout actions.
+
+### Changed
+- Settings schema converted to strict Kodi v19+ format (section/category/group/setting/control hierarchy) with proper constraint blocks, enable/disable flags, and control nesting for full compliance.
+- Settings.xml language category simplified and streamlined — removed UI elements prone to blank rendering.
+- Account settings layout restructured to properly display subscription fields (name, type, expiry, max devices) as read-only visible information.
+- Language change detection logic migrated from settings menu to lightweight background service using Kodi's native `xbmc.Monitor.onSettingsChanged()` callback for reliable, immediate notification.
+
+### Fixed
+- Logout action button in Settings > Account was non-functional — fixed by moving action data to correct setting-level element with proper button control format.
+- Settings UI rendering failures caused by schema format violations in converted settings structure (missing constraints, improper enable flags, incorrect control nesting).
+- Dutch language text not displaying in settings menu due to localization string binding issues in converted settings format.
+- Missing subscription type field in account information — added recursive extraction function crawling API payload for subscription-related fields.
+- Language restart message now displays immediately when user presses OK in language selection (previously relied on unreliable UI element in settings.xml that rendered blank).
+
+### Notes
+- Background service persists language state to addon profile directory to track changes across sessions.
+- Subscription fields extracted from NLZiet API customer summary object with fallback handling for varying API response structures.
+- Service registration in addon.xml uses `start="startup"` to ensure background monitor launches automatically on Kodi startup.
+
+----
+
 ## [0.0.9] - 2026-04-04
 
 ### Added

@@ -110,6 +110,7 @@ TRANSLATIONS = {
     'cancel_btn': {'nl': 'Annuleren', 'en': 'Cancel'},
     'season': {'nl': 'Seizoen', 'en': 'Season'},
     'subscription_label': {'nl': 'Abonnement', 'en': 'Subscription'},
+    'subscription_type_label': {'nl': 'Type', 'en': 'Type'},
     'max_devices_label': {'nl': 'Max apparaten', 'en': 'Max devices'},
     'expires_label': {'nl': 'Verloopt', 'en': 'Expires'},
 }
@@ -1117,6 +1118,54 @@ def _extract_subscription_name(summary):
     return str(found) if found else ''
 
 
+def _extract_subscription_type(summary):
+    """Try to parse subscription type from API summary payload."""
+    if not summary:
+        return ''
+
+    if isinstance(summary, dict):
+        sub = summary.get('subscription') or summary.get('plan') or summary.get('product') or {}
+        if isinstance(sub, dict):
+            for key in ('subscriptionType', 'planType', 'productType', 'tier', 'type'):
+                value = sub.get(key)
+                if value is not None and str(value).strip():
+                    return str(value)
+
+        for key in ('subscription_type', 'subscriptionType', 'planType', 'productType'):
+            value = summary.get(key)
+            if value is not None and str(value).strip():
+                return str(value)
+
+    def _find(data, in_subscription_context=False):
+        if isinstance(data, dict):
+            keys = {str(k).lower() for k in data.keys()}
+            ctx = in_subscription_context or bool(keys & {'subscription', 'plan', 'product', 'subscriptiontype', 'plantype', 'producttype'})
+
+            for key in ('subscriptionType', 'planType', 'productType', 'tier', 'type'):
+                if key in data:
+                    value = data.get(key)
+                    if value is not None and str(value).strip():
+                        if key != 'type' or ctx:
+                            return str(value)
+
+            for k, v in data.items():
+                next_ctx = ctx or str(k).lower() in {'subscription', 'plan', 'product'}
+                result = _find(v, next_ctx)
+                if result:
+                    return result
+
+        elif isinstance(data, list):
+            for item in data:
+                result = _find(item, in_subscription_context)
+                if result:
+                    return result
+
+        return None
+
+    found = _find(summary)
+    return str(found) if found else ''
+
+
 def _extract_subscription_expiry(summary):
     """Try to parse subscription expiry (nextDate) from API summary payload."""
     if not summary:
@@ -1179,11 +1228,13 @@ def refresh_account_info(notify=True):
     summary = api.get_customer_summary() or {}
 
     subscription = _extract_subscription_name(summary) or ''
+    subscription_type = _extract_subscription_type(summary) or ''
     max_devices = _extract_max_devices(summary) or ''
     subscription_expires = _extract_subscription_expiry(summary) or ''
 
     try:
         ADDON.setSetting('subscription_name', subscription)
+        ADDON.setSetting('subscription_type', subscription_type)
         ADDON.setSetting('max_devices', max_devices)
         ADDON.setSetting('subscription_expires', subscription_expires)
     except Exception:
@@ -1192,6 +1243,8 @@ def refresh_account_info(notify=True):
     display_values = []
     if subscription:
         display_values.append(f"{get_string('subscription_label')}: {subscription}")
+    if subscription_type:
+        display_values.append(f"{get_string('subscription_type_label')}: {subscription_type}")
     if max_devices:
         display_values.append(f"{get_string('max_devices_label')}: {max_devices}")
     if subscription_expires:
@@ -1264,7 +1317,7 @@ def do_logout(keep_mylist=False):
     
     # Clear relevant addon settings so the addon appears fresh
     try:
-        for key in ('profile_id', 'profile_name', 'subscription_name', 'subscription_expires', 'max_devices', 'username', 'password', 'save_credentials'):
+        for key in ('profile_id', 'profile_name', 'subscription_name', 'subscription_type', 'subscription_expires', 'max_devices', 'username', 'password', 'save_credentials'):
             try:
                 ADDON.setSetting(key, '')
             except Exception:
@@ -2721,14 +2774,11 @@ def check_and_reload_on_settings_change():
         # Check if language setting changed
         if stored_language is not None and stored_language != current_language:
             xbmc.log(f"NLZiet detected language change", xbmc.LOGINFO)
-            
-            # Show notification to user asking them to reload
-            langs = {0: 'Dutch', 1: 'English'}
-            new_lang = langs.get(int(current_language), current_language)
-            notification = f'Language changed to {new_lang}.\nPlease reload the addon to apply changes.'
-            
+
+            # Show a modal popup so the user can't miss the restart requirement.
             try:
-                xbmcgui.Dialog().notification('NLZiet', notification, xbmcgui.NOTIFICATION_INFO, 3000)
+                message = ADDON.getLocalizedString(30117) or 'Restart Kodi to apply language changes'
+                xbmcgui.Dialog().ok('NLZiet', message)
             except Exception:
                 pass
             
