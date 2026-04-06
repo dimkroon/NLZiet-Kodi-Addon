@@ -1,5 +1,13 @@
+name: Kodi Addon Verification
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
 jobs:
-  kodi-validation:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -11,7 +19,31 @@ jobs:
           python-version: '3.11'
 
       - name: Install Kodi Addon Checker
-        run: pip install kodi-addon-checker
+        run: |
+          python -m pip install --upgrade pip
+          pip install kodi-addon-checker
 
-      - name: Run Validation
+      - name: Run Kodi Addon Checker (Omega)
+        # Using the CLI directly avoids the Python 3.7 Docker issues
         run: kodi-addon-checker --kodi-version omega .
+
+      - name: Release Integrity Check
+        # This ensures you haven't accidentally committed "bloat" files
+        run: |
+          echo "Verifying bare file structure..."
+          EXIT_CODE=0
+          
+          # List of folders/files that SHOULD NOT be in a clean repo/release
+          JUNK=("./venv" "./.env" "./__pycache__" "./.vscode" "./.idea" "./.pytest_cache")
+          
+          for item in "${JUNK[@]}"; do
+            if [ -d "$item" ] || [ -f "$item" ]; then
+              echo "::error::Illegal file/folder found: $item. Please remove it for a clean release."
+              EXIT_CODE=1
+            fi
+          done
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "Structure is clean and bare-metal ready."
+          fi
+          exit $EXIT_CODE
