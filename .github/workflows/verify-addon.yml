@@ -1,0 +1,46 @@
+name: Kodi Addon Verification
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  kodi-validation:
+    runs-on: ubuntu-latest
+    name: Kodi Addon Checker
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Kodi Addon Checker (Omega)
+        id: kodi-checker
+        uses: xbmc/action-kodi-addon-checker@v1.2
+        with:
+          kodi-version: omega
+          addon-id: plugin.video.nlziet # Replace with your actual ID
+          is-pr: ${{ github.event_name == 'pull_request' }}
+
+      - name: Python Linting (Flake8)
+        run: |
+          pip install flake8
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  package-check:
+    runs-on: ubuntu-latest
+    name: Release Integrity Check
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Verify Clean Structure
+        run: |
+          # Ensure no forbidden files are present in the root
+          FORBIDDEN=(".git" ".vscode" "venv" "__pycache__" ".github")
+          for item in "${FORBIDDEN[@]}"; do
+            if [ -d "$item" ] || [ -f "$item" ]; then
+              echo "Warning: $item found. Ensure your release script excludes this."
+            fi
+          done
