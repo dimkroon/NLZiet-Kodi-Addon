@@ -1,5 +1,7 @@
 # Changelog
 
+> **Latest Version:** v1.0.0 (April 6, 2026)
+
 All notable changes to this project are recorded in this file.
 
 ## [Unreleased]
