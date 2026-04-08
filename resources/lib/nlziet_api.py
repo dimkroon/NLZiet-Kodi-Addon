@@ -15,6 +15,7 @@ import re
 import os
 import json
 import time
+import requests
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -2905,17 +2906,13 @@ class NLZietAPI:
             if not date:
                 date = datetime.date.today().isoformat()
 
-            params = [('date', date)]
-            if channel_ids:
-                if isinstance(channel_ids, (list, tuple)):
-                    for c in channel_ids:
-                        if c:
-                            params.append(('channel', str(c)))
-                else:
-                    params.append(('channel', str(channel_ids)))
+            url = urllib.parse.urljoin(self.base_url, '/v9/epg/programlocations')
 
-            qs = urllib.parse.urlencode(params, doseq=True)
-            url = urllib.parse.urljoin(self.base_url, '/v9/epg/programlocations') + '?' + qs
+            if channel_ids:
+                params = {'date': date,
+                          'channel': channel_ids}
+            else:
+                params = {'date': date}
 
             headers = {
                 'User-Agent': self.user_agent,
@@ -2926,199 +2923,32 @@ class NLZietAPI:
                 'nlziet-appversion': '6.0.3',
                 'nlziet-devicecapabilities': 'LowLatency,FutureItems,favoriteChannels,MyList,placementTile',
             }
-            token = self.get_access_token()
-            if token:
-                headers['Authorization'] = 'Bearer ' + token
 
-            req = urllib.request.Request(url, headers=headers)
-            with self._open_with_opener(self.opener, req, timeout=20) as r:
-                data = json.load(r)
+            resp = requests.get(url,
+                                headers=headers,
+                                params=params)
+            resp.raise_for_status()
+            data = json.loads(resp.content)
 
-            # Identify list container in response and handle nested channel/programLocations format
-            items = None
-            flattened_items = []
-            
-            if isinstance(data, dict):
-                for key in ('programLocations', 'programs', 'items', 'data', 'results'):
-                    if key in data and isinstance(data.get(key), (list, tuple)):
-                        items = data.get(key)
-                        break
-                if items is None:
-                    # fallback: collect any lists found at top-level
-                    collected = []
-                    for v in data.values():
-                        if isinstance(v, list):
-                            collected.extend(v)
-                    items = collected
-            elif isinstance(data, list):
-                items = data
-            else:
-                items = []
+            chan_list = data['data']
+            epg = {}
+            for chan in chan_list:
+                chan_id = chan['channel']['content']['id']
+                chan_epg = []
+                for pgm_item in chan['programLocations']:
+                    pgm_content = pgm_item['content']
+                    chan_epg.append ({
+                        'start': pgm_content['startAt'],
+                        'stop': pgm_content['endAt'],
+                        'title': pgm_content['title'],
+                        'image': pgm_content['image']['landscapeUrl'],
+                        'date': pgm_content['firstBroadcast'][:10]
+                    })
+                epg[chan_id] = chan_epg
 
-            # Detect and flatten nested channel/programLocations response format
-            # Response may have format: [{ "channel": {...}, "programLocations": [...] }, ...]
-            if items:
-                first_item = items[0] if items else {}
-                if isinstance(first_item, dict) and 'channel' in first_item and 'programLocations' in first_item:
-                    # This is the nested format - flatten it
-                    for item_group in items:
-                        if not isinstance(item_group, dict):
-                            continue
-                        channel_obj = item_group.get('channel')
-                        program_locations = item_group.get('programLocations', [])
-                        
-                        # Extract channel ID from nested structure
-                        channel_id = None
-                        if isinstance(channel_obj, dict):
-                            content = channel_obj.get('content', {})
-                            if isinstance(content, dict):
-                                channel_id = content.get('id') or content.get('contentId')
-                            else:
-                                channel_id = channel_obj.get('id') or channel_obj.get('contentId')
-                        
-                        # Flatten each program location with its channel ID
-                        if channel_id and isinstance(program_locations, list):
-                            for prog_loc in program_locations:
-                                if isinstance(prog_loc, dict):
-                                    flattened_items.append({
-                                        'channel': channel_id,
-                                        'program': prog_loc
-                                    })
-                    items = flattened_items if flattened_items else items
-
-            epg_map = {}
-            now_ts = int(time.time())
-
-            for it in items:
-                if not isinstance(it, dict):
-                    continue
-
-                # Attempt to determine channel id for this item
-                channel = None
-                for ck in ('channel', 'channelId', 'channel_id', 'channelCode', 'id'):
-                    if ck in it and it.get(ck):
-                        channel = it.get(ck)
-                        break
-                if not channel:
-                    # try nested containers
-                    for container in ('content', 'program', 'channelInfo'):
-                        part = it.get(container)
-                        if isinstance(part, dict):
-                            for ck in ('channel', 'channelId', 'id', 'code'):
-                                if ck in part and part.get(ck):
-                                    channel = part.get(ck)
-                                    break
-                            if channel:
-                                break
-
-                # program object may be nested or the item itself
-                program = None
-                for pkey in ('program', 'programme', 'programItem', 'programLocation', 'item'):
-                    if pkey in it and it.get(pkey):
-                        program = it.get(pkey)
-                        break
-                if not program:
-                    program = it
-
-                # extract human fields from program or its content sub-object
-                content_obj = program.get('content') if isinstance(program, dict) and program else {}
-                title = (program.get('title') if isinstance(program, dict) else None) or (content_obj.get('title') if isinstance(content_obj, dict) else None) or (program.get('name') if isinstance(program, dict) else None) or (program.get('programmeTitle') if isinstance(program, dict) else None) or ''
-                desc = (program.get('description') if isinstance(program, dict) else None) or (content_obj.get('description') if isinstance(content_obj, dict) else None) or (program.get('summary') if isinstance(program, dict) else None) or (program.get('shortDescription') if isinstance(program, dict) else None) or ''
-
-                # parse start/end timestamps using existing helper
-                start_ts = None
-                end_ts = None
-                for k in ('startTime', 'start', 'start_time', 'scheduledStart', 'startDateTime', 'from', 'startAt'):
-                    val = (program.get(k) if isinstance(program, dict) else None) or (content_obj.get(k) if isinstance(content_obj, dict) else None)
-                    if val:
-                        parsed = self._parse_timestamp(val)
-                        if parsed:
-                            start_ts = parsed
-                            break
-                for k in ('endTime', 'end', 'end_time', 'scheduledEnd', 'endDateTime', 'to', 'endAt'):
-                    val = (program.get(k) if isinstance(program, dict) else None) or (content_obj.get(k) if isinstance(content_obj, dict) else None)
-                    if val:
-                        parsed = self._parse_timestamp(val)
-                        if parsed:
-                            end_ts = parsed
-                            break
-
-                # fallback to item-level fields
-                if not start_ts:
-                    for k in ('startTime', 'start', 'from', 'startAt'):
-                        if it.get(k):
-                            parsed = self._parse_timestamp(it.get(k))
-                            if parsed:
-                                start_ts = parsed
-                                break
-                if not end_ts:
-                    for k in ('endTime', 'end', 'to', 'endAt'):
-                        if it.get(k):
-                            parsed = self._parse_timestamp(it.get(k))
-                            if parsed:
-                                end_ts = parsed
-                                break
-
-                in_now = False
-                if start_ts and end_ts:
-                    if start_ts <= now_ts <= end_ts:
-                        in_now = True
-                else:
-                    if program.get('isRunningNow') or program.get('isNow') or program.get('running'):
-                        in_now = True
-
-                if channel:
-                    key = str(channel)
-                    
-                    # Store program with timestamp info for sorting and selection later
-                    prog_info = {
-                        'title': title,
-                        'desc': desc,
-                        'start': start_ts,
-                        'end': end_ts,
-                        'in_now': in_now,
-                        'raw': program
-                    }
-                    
-                    # Keep a list of all programs per channel to find current and next
-                    if key not in epg_map:
-                        epg_map[key] = {'programs': [], 'current': None, 'next': None}
-                    
-                    epg_map[key]['programs'].append(prog_info)
-            
-            # Post-process: for each channel, identify current and next programs
-            for channel_id in epg_map:
-                channel_data = epg_map[channel_id]
-                programs = channel_data.get('programs', [])
-                
-                # Sort programs by start time
-                sorted_progs = sorted([p for p in programs if p.get('start')], key=lambda p: p.get('start', 0))
-                
-                # Find currently playing (highest priority)
-                current_prog = None
-                next_prog = None
-                for i, prog in enumerate(sorted_progs):
-                    if prog.get('in_now'):
-                        current_prog = prog
-                        # Next program is the following one
-                        if i + 1 < len(sorted_progs):
-                            next_prog = sorted_progs[i + 1]
-                        break
-                
-                # If no current playing program found, use the last one that started (most recent)
-                if not current_prog and sorted_progs:
-                    current_prog = sorted_progs[-1]
-                    # Next would be beyond today
-                
-                epg_map[channel_id]['current'] = current_prog
-                epg_map[channel_id]['next'] = next_prog
-                # Clean up the temporary programs list
-                epg_map[channel_id].pop('programs', None)
-
-            return epg_map
+            return epg
         except Exception as e:
-            xbmc.log(f"NLZiet get_current_programs error: {e}", xbmc.LOGERROR)
-            xbmc.log(traceback.format_exc(), xbmc.LOGERROR)
+            xbmc.log(f"NLZiet get_current_programs error:\n" + traceback.format_exc())
             return {}
 
     def get_series_list(self, limit=999, offset=0):

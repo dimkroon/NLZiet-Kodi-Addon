@@ -8,7 +8,12 @@ import xbmcgui
 import xbmcplugin
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
 
 from resources.lib.nlziet_api import NLZietAPI
 
@@ -2243,69 +2248,37 @@ def browse_category(content_type):
                 if content_type.lower() == 'channels' and item.get('id'):
                     try:
                         channel_id = item.get('id')
-                        # Try multiple key formats to handle ID type mismatches (string vs int)
-                        channel_epg = None
-                        for key_variant in [str(channel_id), channel_id]:
-                            if key_variant is not None:
-                                channel_epg = epg_map.get(key_variant)
-                                if channel_epg:
-                                    break
+                        channel_epg = epg_map.get(channel_id)
 
                         # New structure: channel_epg has 'current' and 'next' keys
-                        if channel_epg and isinstance(channel_epg, dict) and 'current' in channel_epg:
-                            current_prog = channel_epg.get('current')
-                            next_prog = channel_epg.get('next')
-                            
-                            # Build display lines for current and next programs
+                        if channel_epg:
+                            now = datetime.now(tz=ZoneInfo('Europe/Amsterdam'))
+                            now_plus_6 = now + timedelta(hours=6)
                             epg_lines = []
-                            
-                            if current_prog and isinstance(current_prog, dict):
-                                title_prog = current_prog.get('title') or ''
-                                start_ts = current_prog.get('start')
-                                end_ts = current_prog.get('end')
-                                try:
-                                    start_s = time.strftime('%H:%M', time.localtime(start_ts)) if start_ts else ''
-                                    end_s = time.strftime('%H:%M', time.localtime(end_ts)) if end_ts else ''
-                                except Exception:
-                                    start_s = end_s = ''
-                                
-                                time_range = ''
-                                if start_s and end_s:
-                                    time_range = f"{start_s}-{end_s}"
-                                elif start_s:
-                                    time_range = start_s
-                                
-                                current_line = f"Nu live: {title_prog}" + (f" ({time_range})" if time_range else '')
-                                epg_lines.append(current_line)
-                            
-                            if next_prog and isinstance(next_prog, dict):
-                                next_title = next_prog.get('title') or ''
-                                next_start_ts = next_prog.get('start')
-                                next_end_ts = next_prog.get('end')
-                                try:
-                                    next_start_s = time.strftime('%H:%M', time.localtime(next_start_ts)) if next_start_ts else ''
-                                    next_end_s = time.strftime('%H:%M', time.localtime(next_end_ts)) if next_end_ts else ''
-                                except Exception:
-                                    next_start_s = next_end_s = ''
-                                
-                                next_time_range = ''
-                                if next_start_s and next_end_s:
-                                    next_time_range = f"{next_start_s}-{next_end_s}"
-                                elif next_start_s:
-                                    next_time_range = next_start_s
-                                
-                                next_line = f"Straks: {next_title}" + (f" ({next_time_range})" if next_time_range else '')
-                                epg_lines.append(next_line)
-                            
+                            for pgm in channel_epg:
+                                # only supports python >= 3.7
+                                start = datetime.fromisoformat(pgm['start'])
+                                end = datetime.fromisoformat(pgm['stop'])
+                                if end > now_plus_6:
+                                    break
+                                if end > now:
+                                    epg_lines.append(' - '.join((
+                                        start.strftime("%H:%M"),
+                                        pgm["title"])))
+
                             # Update info with EPG data
                             if epg_lines:
-                                epg_text = '\n'.join(epg_lines)
+                                epg_text = '\n'.join(epg_lines[:12])
                                 if info:
                                     info['plotoutline'] = epg_text
                                     info['plot'] = epg_text
                                 else:
-                                    info = {'title': item.get('title'), 'plotoutline': epg_text, 'plot': epg_text}
-                    except Exception:
+                                    firstpgm = epg_lines[0].split(" - ", 1)[1]
+                                    info = {'title': f"{item.get('title')}   [COLOR orange]{firstpgm}[/COLOR]",
+                                            'plotoutline': epg_text, 
+                                            'plot': epg_text}
+                                    item['title'] = info['title']
+                    except (KeyError, TypeError):
                         pass
         except Exception as e:
             info = None
