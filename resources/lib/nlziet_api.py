@@ -13,6 +13,7 @@ Notes:
 """
 import re
 import os
+import sys
 import json
 import time
 import requests
@@ -23,6 +24,7 @@ import http.cookiejar
 import xbmcvfs
 import xbmcaddon
 import xbmc
+import xbmcgui
 import traceback
 
 
@@ -388,6 +390,7 @@ class NLZietAPI:
                 body_bytes = he.read() or b''
             except Exception:
                 body_bytes = b''
+            he.content = body_bytes
             try:
                 body_text = body_bytes.decode('utf-8', errors='replace')
             except Exception:
@@ -401,7 +404,7 @@ class NLZietAPI:
                 except Exception:
                     pass
             self._append_debug("--- END ---")
-            raise
+            raise he
         else:
             try:
                 resp_bytes = r.read() or b''
@@ -2610,6 +2613,14 @@ class NLZietAPI:
                     else:
                         xbmc.log("NLZiet: PKCE authorize+exchange failed (401)", xbmc.LOGERROR)
                         raise
+                if he.code == 403:
+                    try:
+                        data = json.loads(he.content)
+                        msg = data['errors'][0]['message']
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        msg = 'Not allowed'
+                    xbmcgui.Dialog().ok(self.addon.getAddonInfo('name'), msg)
+                    sys.exit(1)
                 else:
                     raise
 
