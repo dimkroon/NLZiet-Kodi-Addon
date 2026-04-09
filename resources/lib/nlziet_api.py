@@ -28,6 +28,9 @@ import xbmcgui
 import traceback
 
 
+TEXT_VOD_UNAVAILABLE = 33001
+
+
 class NLZietAPI:
     def __init__(self, username=None, password=None, base_url=None):
         self.addon = xbmcaddon.Addon()
@@ -36,8 +39,8 @@ class NLZietAPI:
         self.base_url = base_url or self.addon.getSetting('api_base_url') or 'https://api.nlziet.nl'
         self.user_agent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36'
 
-        addon_id = self.addon.getAddonInfo('id')
-        cookie_dir = xbmcvfs.translatePath('special://profile/addon_data/{}'.format(addon_id))
+        self.addon_id = self.addon.getAddonInfo('id')
+        cookie_dir = xbmcvfs.translatePath('special://profile/addon_data/{}'.format(self.addon_id))
         try:
             os.makedirs(cookie_dir, exist_ok=True)
         except Exception:
@@ -2537,7 +2540,8 @@ class NLZietAPI:
                 pass
             return []
 
-    def get_stream_info(self, content_id, context='OnDemand', playerName='BitmovinWeb', sourceType='Dash', preferLowLatency='false'):
+    def get_stream_info(self, content_id, context='OnDemand', playerName='BitmovinWeb', sourceType='Dash',
+                        preferLowLatency='false', asset_id='', channel=''):
         if not content_id:
             raise ValueError('content_id required')
         try:
@@ -2554,7 +2558,6 @@ class NLZietAPI:
                     'consent': '',
                     'offsetType': 'Live',
                     'referer': f'https://app.nlziet.nl/play?context=Live&channel={content_id}',
-                    'playerName': playerName,
                     'preferLowLatency': preferLowLatency,
                 }
             else:
@@ -2569,6 +2572,14 @@ class NLZietAPI:
                     'referer': f'https://app.nlziet.nl/play?context={context}&id={content_id}',
                     'preferLowLatency': preferLowLatency,
                 }
+            if context.lower() == 'epg':
+                params.update({
+                    'referer': ''.join((params['referer'],
+                                        '&preferredAssetId=', asset_id,
+                                        '&channel=', channel)),
+                    'preferredAssetId': asset_id,
+                    'channel': channel})
+
             url = urllib.parse.urljoin(self.base_url, '/v9/stream/handshake') + '?' + urllib.parse.urlencode(params)
             headers = {
                 'User-Agent': self.user_agent,
@@ -2619,6 +2630,10 @@ class NLZietAPI:
                         msg = data['errors'][0]['message']
                     except (json.JSONDecodeError, KeyError, IndexError):
                         msg = 'Not allowed'
+                    xbmcgui.Dialog().ok(self.addon.getAddonInfo('name'), msg)
+                    sys.exit(1)
+                if he.code == 500 and context.lower() == 'epg':
+                    msg = self.addon.getLocalizedString(TEXT_VOD_UNAVAILABLE)
                     xbmcgui.Dialog().ok(self.addon.getAddonInfo('name'), msg)
                     sys.exit(1)
                 else:
@@ -2948,12 +2963,27 @@ class NLZietAPI:
                 chan_epg = []
                 for pgm_item in chan['programLocations']:
                     pgm_content = pgm_item['content']
+                    item_id = pgm_content['contentItemId']
+
+                    if pgm_content.get('isVodReplaceable'):
+                        stream_url = f"plugin://{self.addon_id}?mode=play&id={item_id}"
+                    elif pgm_content.get('isReplayAllowed'):
+                        stream_url = ''.join(('plugin://', self.addon_id,
+                                              '?mode=play',
+                                              '&id=', item_id,
+                                              '&fmt=epg',
+                                              '&asset_id=', pgm_content['assetId'],
+                                              '&channel=', chan_id))
+                    else:
+                        stream_url = None
+
                     chan_epg.append ({
                         'start': pgm_content['startAt'],
                         'stop': pgm_content['endAt'],
                         'title': pgm_content['title'],
                         'image': pgm_content['image']['landscapeUrl'],
-                        'date': pgm_content['firstBroadcast'][:10]
+                        'date': pgm_content['firstBroadcast'][:10],
+                        'stream': stream_url
                     })
                 epg[chan_id] = chan_epg
 

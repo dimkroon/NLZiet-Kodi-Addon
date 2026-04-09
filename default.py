@@ -2532,7 +2532,7 @@ def ensure_inputstream_for_drm():
 # Global playback monitor for live TV subtitle control
 _playback_monitor = None
 
-def play_item(content_id, fmt=None):
+def play_item(content_id, fmt=None, **kwargs):
     username = ADDON.getSetting('username')
     password = ADDON.getSetting('password')
     # Use cached API instance - still makes the stream info call but avoids object init overhead
@@ -2545,6 +2545,8 @@ def play_item(content_id, fmt=None):
     if fmt == 'live':
         info = api.get_stream_info(content_id, context='Live')
         xbmc.log(f"NLZiet LIVE TV: id={content_id} context='Live'", xbmc.LOGINFO)
+    elif fmt == 'epg':
+        info = api.get_stream_info(content_id, context='Epg', **kwargs)
     else:
         info = api.get_stream_info(content_id)
         xbmc.log(f"NLZiet REGULAR content: id={content_id} (not live)", xbmc.LOGINFO)
@@ -2812,9 +2814,41 @@ def play_item(content_id, fmt=None):
         xbmcplugin.setResolvedUrl(HANDLE, True, li)
 
 
+def select_iptv_channels():
+    from resources.lib.iptvmgr import read_enabled_channels, save_enabled_channels
+    api = get_api_instance()
+    # Read the list of currently available channels from NLZiet
+    available_channels = api.get_channels()
+    available_ids = [chan['id'] for chan in available_channels]
+
+    # Since Kodi's multi-select dialog selects items by listing indexes to
+    # the selected items in its list, calculate the indexes of the currently
+    # enabled channels.
+    enabled_channels = read_enabled_channels(api)
+    if enabled_channels is None:
+        # Not saved yet, enable all
+        enabled_indices = list(range(len(available_ids)))
+    else:
+        enabled_indices = []
+        for chan_id in enabled_channels:
+            try:
+                enabled_indices.append(available_ids.index(chan_id))
+            except ValueError:
+                pass
+    # Open a multiselect dialog and allow the user to make a new selection.
+    new_indices = xbmcgui.Dialog().multiselect(
+        api.addon.getAddonInfo('name'),
+        [chan['title'] for chan in available_channels],
+        preselect=enabled_indices
+    )
+    # Store the new selection to file.
+    enabled_channels = [available_channels[idx]['id'] for idx in new_indices]
+    save_enabled_channels(api, enabled_channels)
+
+
 def router(paramstring):
     params = dict(urllib.parse.parse_qsl(paramstring))
-    mode = params.get('mode')
+    mode = params.pop('mode', None)
     if not mode:
         main_menu()
     elif mode == 'login':
@@ -2866,7 +2900,16 @@ def router(paramstring):
     elif mode == 'browse':
         browse_category(params.get('type', 'all'))
     elif mode == 'play':
-        play_item(params.get('id'), params.get('fmt'))
+        content_id = params.pop('id')
+        play_item(content_id, **params)
+    elif mode == 'iptv-select-channels':
+        select_iptv_channels()
+    elif mode == 'iptv-channels':
+        from resources.lib import iptvmgr
+        iptvmgr.IPTVManager(int(params['port'])).send_channels()
+    elif mode == 'iptv.epg':
+        from resources.lib import iptvmgr
+        iptvmgr.IPTVManager(int(params['port'])).send_epg()
 
 
 if __name__ == '__main__':
