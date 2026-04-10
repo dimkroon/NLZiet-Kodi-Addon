@@ -21,11 +21,6 @@ _api_cache = None
 _api_cache_time = 0
 _api_cache_timeout = 300  # 5 minutes - refresh cache after this
 
-# Short-lived channels listing cache to make return-from-playback instant.
-_channel_menu_cache_data = []
-_channel_menu_cache_epg = {}
-_channel_menu_cache_time = 0
-_channel_menu_cache_ttl = 45  # seconds
 
 def get_api_instance():
     """Get or create a cached API instance to avoid repeated disk I/O and initialization."""
@@ -67,10 +62,6 @@ def get_channels_menu_data(api_instance):
     This avoids re-fetching channels/EPG immediately after stopping Live TV,
     which makes menu return feel instant.
     """
-    global _channel_menu_cache_data, _channel_menu_cache_epg, _channel_menu_cache_time
-    now = time.time()
-    if _channel_menu_cache_time and (now - _channel_menu_cache_time) < _channel_menu_cache_ttl:
-        return _channel_menu_cache_data or [], _channel_menu_cache_epg or {}
 
     results = api_instance.get_channels() or []
     epg_map = {}
@@ -83,9 +74,6 @@ def get_channels_menu_data(api_instance):
             xbmc.log(f"get_channels_menu_data: EPG fetch failed: {e}", xbmc.LOGWARNING)
             epg_map = {}
 
-    _channel_menu_cache_data = results
-    _channel_menu_cache_epg = epg_map
-    _channel_menu_cache_time = now
     return results, epg_map
 
 # Raw expiry color to test — change this to 'orange' or a hex like 'FFA500' or
