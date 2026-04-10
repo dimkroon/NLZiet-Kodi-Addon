@@ -603,6 +603,7 @@ def main_menu():
 
 def browse_series_categories():
     """Display series category/genre list."""
+    set_sort_methods()
     api = get_api_instance()
 
     genres = api.get_series_genres()
@@ -615,6 +616,7 @@ def browse_series_categories():
 
 def browse_series_genre(genre=None):
     """Display series in a selected genre."""
+    set_sort_methods()
     api = get_api_instance()
 
     # Handle "all" as None for the API
@@ -889,6 +891,7 @@ def show_series_season(series_id, season_id):
 
 def browse_tv_shows():
     """Show TV show categories/genres for browsing."""
+    set_sort_methods()
     api = get_api_instance()
     
     genres = api.get_tv_show_genres()
@@ -900,6 +903,7 @@ def browse_tv_shows():
 
 def browse_tv_genre(genre=None):
     """Show TV shows for a specific genre."""
+    set_sort_methods()
     api = get_api_instance()
     
     # Get shows for the genre (None for 'all')
@@ -998,6 +1002,7 @@ def browse_movie_categories():
 
 def browse_movie_genre(genre=None):
     """Display movies in a selected genre."""
+    set_sort_methods()
     api = get_api_instance()
 
     # Handle "all" as None for the API
@@ -1037,6 +1042,7 @@ def browse_placement_row(items_url=None, placement_id=None, comp_index=None):
     """List items for a placement row. Accepts either `items_url` or a
     `placement_id` + `comp_index` to locate inline items.
     """
+    set_sort_methods()
     username = ADDON.getSetting('username')
     password = ADDON.getSetting('password')
     # Use cached API instance for faster placement loading
@@ -1742,6 +1748,7 @@ def browse_my_list():
 
 def browse_my_list_group(group):
     """Show items from the user's My List filtered to a single group."""
+    set_sort_methods()
     username = ADDON.getSetting('username')
     password = ADDON.getSetting('password')
     # Use cached API instance for faster group loading
@@ -2173,6 +2180,7 @@ def do_search():
 def browse_category(content_type):
     username = ADDON.getSetting('username')
     password = ADDON.getSetting('password')
+    set_sort_methods()
     # Use cached API instance for faster menu navigation
     try:
         api = get_api_instance()
@@ -2800,6 +2808,15 @@ def play_item(content_id, fmt=None, **kwargs):
             xbmc.log(f"NLZiet exception in non-DRM subtitle handling: {e}", xbmc.LOGINFO)
         
         xbmcplugin.setResolvedUrl(HANDLE, True, li)
+
+
+def set_sort_methods(additional_methods=None):
+    xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_UNSORTED)
+    xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_TITLE_IGNORE_THE)
+    xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_LASTPLAYED)
+    if additional_methods:
+        for method in additional_methods:
+            xbmcplugin.addSortMethod(HANDLE, method)
 
 
 def select_iptv_channels():
