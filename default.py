@@ -8,7 +8,12 @@ import xbmcgui
 import xbmcplugin
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
 
 from resources.lib.nlziet_api import NLZietAPI
 
@@ -2231,69 +2236,37 @@ def browse_category(content_type):
                 if content_type.lower() == 'channels' and item.get('id'):
                     try:
                         channel_id = item.get('id')
-                        # Try multiple key formats to handle ID type mismatches (string vs int)
-                        channel_epg = None
-                        for key_variant in [str(channel_id), channel_id]:
-                            if key_variant is not None:
-                                channel_epg = epg_map.get(key_variant)
-                                if channel_epg:
-                                    break
+                        channel_epg = epg_map.get(channel_id)
 
                         # New structure: channel_epg has 'current' and 'next' keys
-                        if channel_epg and isinstance(channel_epg, dict) and 'current' in channel_epg:
-                            current_prog = channel_epg.get('current')
-                            next_prog = channel_epg.get('next')
-                            
-                            # Build display lines for current and next programs
+                        if channel_epg:
+                            now = datetime.now(tz=ZoneInfo('Europe/Amsterdam'))
+                            now_plus_6 = now + timedelta(hours=6)
                             epg_lines = []
-                            
-                            if current_prog and isinstance(current_prog, dict):
-                                title_prog = current_prog.get('title') or ''
-                                start_ts = current_prog.get('start')
-                                end_ts = current_prog.get('end')
-                                try:
-                                    start_s = time.strftime('%H:%M', time.localtime(start_ts)) if start_ts else ''
-                                    end_s = time.strftime('%H:%M', time.localtime(end_ts)) if end_ts else ''
-                                except Exception:
-                                    start_s = end_s = ''
-                                
-                                time_range = ''
-                                if start_s and end_s:
-                                    time_range = f"{start_s}-{end_s}"
-                                elif start_s:
-                                    time_range = start_s
-                                
-                                current_line = f"Nu live: {title_prog}" + (f" ({time_range})" if time_range else '')
-                                epg_lines.append(current_line)
-                            
-                            if next_prog and isinstance(next_prog, dict):
-                                next_title = next_prog.get('title') or ''
-                                next_start_ts = next_prog.get('start')
-                                next_end_ts = next_prog.get('end')
-                                try:
-                                    next_start_s = time.strftime('%H:%M', time.localtime(next_start_ts)) if next_start_ts else ''
-                                    next_end_s = time.strftime('%H:%M', time.localtime(next_end_ts)) if next_end_ts else ''
-                                except Exception:
-                                    next_start_s = next_end_s = ''
-                                
-                                next_time_range = ''
-                                if next_start_s and next_end_s:
-                                    next_time_range = f"{next_start_s}-{next_end_s}"
-                                elif next_start_s:
-                                    next_time_range = next_start_s
-                                
-                                next_line = f"Straks: {next_title}" + (f" ({next_time_range})" if next_time_range else '')
-                                epg_lines.append(next_line)
-                            
+                            for pgm in channel_epg:
+                                # only supports python >= 3.7
+                                start = datetime.fromisoformat(pgm['start'])
+                                end = datetime.fromisoformat(pgm['stop'])
+                                if end > now_plus_6:
+                                    break
+                                if end > now:
+                                    epg_lines.append(' - '.join((
+                                        start.strftime("%H:%M"),
+                                        pgm["title"])))
+
                             # Update info with EPG data
                             if epg_lines:
-                                epg_text = '\n'.join(epg_lines)
+                                epg_text = '\n'.join(epg_lines[:12])
                                 if info:
                                     info['plotoutline'] = epg_text
                                     info['plot'] = epg_text
                                 else:
-                                    info = {'title': item.get('title'), 'plotoutline': epg_text, 'plot': epg_text}
-                    except Exception:
+                                    firstpgm = epg_lines[0].split(" - ", 1)[1]
+                                    info = {'title': f"{item.get('title')}   [COLOR orange]{firstpgm}[/COLOR]",
+                                            'plotoutline': epg_text, 
+                                            'plot': epg_text}
+                                    item['title'] = info['title']
+                    except (KeyError, TypeError):
                         pass
         except Exception as e:
             info = None
@@ -2547,7 +2520,7 @@ def ensure_inputstream_for_drm():
 # Global playback monitor for live TV subtitle control
 _playback_monitor = None
 
-def play_item(content_id, fmt=None):
+def play_item(content_id, fmt=None, **kwargs):
     username = ADDON.getSetting('username')
     password = ADDON.getSetting('password')
     # Use cached API instance - still makes the stream info call but avoids object init overhead
@@ -2560,6 +2533,8 @@ def play_item(content_id, fmt=None):
     if fmt == 'live':
         info = api.get_stream_info(content_id, context='Live')
         xbmc.log(f"NLZiet LIVE TV: id={content_id} context='Live'", xbmc.LOGINFO)
+    elif fmt == 'epg':
+        info = api.get_stream_info(content_id, context='Epg', **kwargs)
     else:
         info = api.get_stream_info(content_id)
         xbmc.log(f"NLZiet REGULAR content: id={content_id} (not live)", xbmc.LOGINFO)
@@ -2827,9 +2802,41 @@ def play_item(content_id, fmt=None):
         xbmcplugin.setResolvedUrl(HANDLE, True, li)
 
 
+def select_iptv_channels():
+    from resources.lib.iptvmgr import read_enabled_channels, save_enabled_channels
+    api = get_api_instance()
+    # Read the list of currently available channels from NLZiet
+    available_channels = api.get_channels()
+    available_ids = [chan['id'] for chan in available_channels]
+
+    # Since Kodi's multi-select dialog selects items by listing indexes to
+    # the selected items in its list, calculate the indexes of the currently
+    # enabled channels.
+    enabled_channels = read_enabled_channels(api)
+    if enabled_channels is None:
+        # Not saved yet, enable all
+        enabled_indices = list(range(len(available_ids)))
+    else:
+        enabled_indices = []
+        for chan_id in enabled_channels:
+            try:
+                enabled_indices.append(available_ids.index(chan_id))
+            except ValueError:
+                pass
+    # Open a multiselect dialog and allow the user to make a new selection.
+    new_indices = xbmcgui.Dialog().multiselect(
+        api.addon.getAddonInfo('name'),
+        [chan['title'] for chan in available_channels],
+        preselect=enabled_indices
+    )
+    # Store the new selection to file.
+    enabled_channels = [available_channels[idx]['id'] for idx in new_indices]
+    save_enabled_channels(api, enabled_channels)
+
+
 def router(paramstring):
     params = dict(urllib.parse.parse_qsl(paramstring))
-    mode = params.get('mode')
+    mode = params.pop('mode', None)
     if not mode:
         main_menu()
     elif mode == 'login':
@@ -2881,7 +2888,16 @@ def router(paramstring):
     elif mode == 'browse':
         browse_category(params.get('type', 'all'))
     elif mode == 'play':
-        play_item(params.get('id'), params.get('fmt'))
+        content_id = params.pop('id')
+        play_item(content_id, **params)
+    elif mode == 'iptv-select-channels':
+        select_iptv_channels()
+    elif mode == 'iptv-channels':
+        from resources.lib import iptvmgr
+        iptvmgr.IPTVManager(int(params['port'])).send_channels()
+    elif mode == 'iptv.epg':
+        from resources.lib import iptvmgr
+        iptvmgr.IPTVManager(int(params['port'])).send_epg()
 
 
 if __name__ == '__main__':
