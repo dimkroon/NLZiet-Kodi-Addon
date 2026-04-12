@@ -631,11 +631,11 @@ def browse_series_genre(genre=None):
             if desc:
                 title_for_info = item.get('title') or ''
                 expiry_text = item.get('expires_in') or None
-                truncated = (desc[:250] + '...') if len(desc) > 250 else desc
+                truncated = desc
                 plot_full = desc
                 po = truncated
                 if expiry_text:
-                    marker = '🔶 '
+                    marker = ''
                     colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
                     plot_full = f"{colored}\n{desc}" if desc else colored
                     po = f"{marker}{expiry_text} — {truncated}" if truncated else f"{marker}{expiry_text}"
@@ -709,11 +709,11 @@ def browse_series():
             if desc:
                 title_for_info = item.get('title') or ''
                 expiry_text = item.get('expires_in') or None
-                truncated = (desc[:250] + '...') if len(desc) > 250 else desc
+                truncated = desc
                 plot_full = desc
                 po = truncated
                 if expiry_text:
-                    marker = '🔶 '
+                    marker = ''
                     colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
                     plot_full = f"{colored}\n{desc}" if desc else colored
                     po = f"{marker}{expiry_text} — {truncated}" if truncated else f"{marker}{expiry_text}"
@@ -807,10 +807,9 @@ def show_series_season(series_id, season_id):
             
             if date_info:
                 plot_full = f"{date_info}\n{desc}" if desc else date_info
-                po = f"{date_info} — {desc[:100]}" if desc else date_info
+                po = f"{date_info} — {desc}" if desc else date_info
             
             if desc or date_info:
-                truncated = (desc[:250] + '...') if len(desc) > 250 else desc
                 info = {
                     'title': title_for_info,
                     'plot': plot_full,
@@ -920,10 +919,8 @@ def browse_tv_genre(genre=None):
             expiry_text = item.get('expires_in') or None
             aired_date = item.get('aired_date') or None
             
-            truncated = (desc[:250] + '...') if len(desc) > 250 else desc
-            plot_full = desc
-            po = truncated
-            
+            truncated = desc
+
             # Add aired/broadcast date info if available
             date_info = ''
             if aired_date:
@@ -944,7 +941,6 @@ def browse_tv_genre(genre=None):
             if date_info:
                 parts.append(date_info)
             if expiry_text:
-                marker = '🔶 '
                 colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
                 parts.append(colored)
             if desc:
@@ -957,7 +953,7 @@ def browse_tv_genre(genre=None):
             if date_info:
                 po_parts.append(date_info)
             if expiry_text:
-                marker = '🔶 '
+                marker = ''
                 po_parts.append(f"{marker}{expiry_text}")
             if truncated:
                 po_parts.append(truncated)
@@ -1016,11 +1012,11 @@ def browse_movie_genre(genre=None):
             if desc:
                 title_for_info = item.get('title') or ''
                 expiry_text = item.get('expires_in') or None
-                truncated = (desc[:250] + '...') if len(desc) > 250 else desc
+                truncated = desc
                 plot_full = desc
                 po = truncated
                 if expiry_text:
-                    marker = '🔶 '
+                    marker = ''
                     colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
                     plot_full = f"{colored}\n{desc}" if desc else colored
                     po = f"{marker}{expiry_text} — {truncated}" if truncated else f"{marker}{expiry_text}"
@@ -1090,11 +1086,11 @@ def browse_placement_row(items_url=None, placement_id=None, comp_index=None):
             info = None
             if desc:
                 expiry_text = src.get('expires_in') or None
-                truncated = (desc[:250] + '...') if len(desc) > 250 else desc
+                truncated = desc
                 plot_full = desc
                 po = truncated
                 if expiry_text:
-                    marker = '🔶 '
+                    marker = ''
                     colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
                     plot_full = f"{colored}\n{desc}" if desc else colored
                     po = f"{marker}{expiry_text} — {truncated}" if truncated else f"{marker}{expiry_text}"
@@ -2082,13 +2078,13 @@ def do_search():
             if desc:
                 title_for_info = item.get('title') or ''
                 expiry_text = item.get('expires_in') or None
-                truncated = (desc[:250] + '...') if len(desc) > 250 else desc
+                truncated = desc
                 # plot: include colored expiry on the first line for the info dialog
                 plot_full = desc
                 # plotoutline (label2): plain expiry prefix + truncated plot for default skin
                 po = truncated
                 if expiry_text:
-                    marker = '🔶 '
+                    marker = ''
                     colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
                     plot_full = f"{colored}\n{desc}" if desc else colored
                     po = f"{marker}{expiry_text} — {truncated}" if truncated else f"{marker}{expiry_text}"
@@ -2106,11 +2102,11 @@ def do_search():
                         expiry_text = detail.get('expires_in') or None
                         title_for_info = detail.get('title') or item.get('title') or ''
                         if desc:
-                            truncated = (desc[:250] + '...') if len(desc) > 250 else desc
+                            truncated = desc
                             plot_full = desc
                             po = truncated
                             if expiry_text:
-                                marker = '🔶 '
+                                marker = ''
                                 colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
                                 plot_full = f"{colored}\n{desc}" if desc else colored
                                 po = f"{marker}{expiry_text} — {truncated}" if truncated else f"{marker}{expiry_text}"
@@ -2204,11 +2200,11 @@ def browse_category(content_type):
             if desc:
                 title_for_info = item.get('title') or ''
                 expiry_text = item.get('expires_in') or None
-                truncated = (desc[:250] + '...') if len(desc) > 250 else desc
+                truncated = desc
                 plot_full = desc
                 po = truncated
                 if expiry_text:
-                    marker = '🔶 '
+                    marker = ''
                     colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
                     plot_full = f"{colored}\n{desc}" if desc else colored
                     po = f"{marker}{expiry_text} — {truncated}" if truncated else f"{marker}{expiry_text}"
@@ -2227,11 +2223,11 @@ def browse_category(content_type):
                         expiry_text = detail.get('expires_in') or None
                         title_for_info = detail.get('title') or item.get('title') or ''
                         if desc:
-                            truncated = (desc[:250] + '...') if len(desc) > 250 else desc
+                            truncated = desc
                             plot_full = desc
                             po = truncated
                             if expiry_text:
-                                marker = '🔶 '
+                                marker = ''
                                 colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
                                 plot_full = f"{colored}\n{desc}" if desc else colored
                                 po = f"{marker}{expiry_text} — {truncated}" if truncated else f"{marker}{expiry_text}"
@@ -2365,11 +2361,11 @@ def search_group(q, group):
             if desc:
                 title_for_info = item.get('title') or ''
                 expiry_text = item.get('expires_in') or None
-                truncated = (desc[:250] + '...') if len(desc) > 250 else desc
+                truncated = desc
                 plot_full = desc
                 po = truncated
                 if expiry_text:
-                    marker = '🔶 '
+                    marker = ''
                     colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
                     plot_full = f"{colored}\n{desc}" if desc else colored
                     po = f"{marker}{expiry_text} — {truncated}" if truncated else f"{marker}{expiry_text}"
@@ -2383,11 +2379,11 @@ def search_group(q, group):
                         expiry_text = detail.get('expires_in') or None
                         title_for_info = detail.get('title') or item.get('title') or ''
                         if desc:
-                            truncated = (desc[:250] + '...') if len(desc) > 250 else desc
+                            truncated = desc
                             plot_full = desc
                             po = truncated
                             if expiry_text:
-                                marker = '🔶 '
+                                marker = ''
                                 colored = _make_color_tag(EXPIRY_COLOR_RAW, expiry_text)
                                 plot_full = f"{colored}\n{desc}" if desc else colored
                                 po = f"{marker}{expiry_text} — {truncated}" if truncated else f"{marker}{expiry_text}"
