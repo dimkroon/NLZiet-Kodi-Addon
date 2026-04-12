@@ -2842,6 +2842,8 @@ def play_item(content_id, fmt=None):
 def router(paramstring):
     params = dict(urllib.parse.parse_qsl(paramstring))
     mode = params.get('mode')
+    if mode and mode not in ('profiles'):
+        xbmcplugin.setContent(HANDLE, 'videos')
     if not mode:
         main_menu()
     elif mode == 'login':
