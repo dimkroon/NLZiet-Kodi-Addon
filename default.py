@@ -2271,7 +2271,7 @@ def browse_category(content_type):
                                 else:
                                     firstpgm = epg_lines[0].split(" - ", 1)[1]
                                     info = {'title': f"{item.get('title')}   [COLOR orange]{firstpgm}[/COLOR]",
-                                            'plotoutline': epg_text, 
+                                            'plotoutline': epg_text,
                                             'plot': epg_text}
                                     item['title'] = info['title']
                     except (KeyError, TypeError):
@@ -2854,6 +2854,8 @@ def select_iptv_channels():
 def router(paramstring):
     params = dict(urllib.parse.parse_qsl(paramstring))
     mode = params.pop('mode', None)
+    if mode and mode not in ('profiles'):
+        xbmcplugin.setContent(HANDLE, 'videos')
     if not mode:
         main_menu()
     elif mode == 'login':
