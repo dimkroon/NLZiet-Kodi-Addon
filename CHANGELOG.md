@@ -1,10 +1,15 @@
 # Changelog
 
-> **Latest Version:** v1.0.0 (April 6, 2026)
+> **Latest Version:** v1.0.1 (April 20, 2026)
 
 All notable changes to this project are recorded in this file.
 
 ## [Unreleased]
+
+## [1.0.1] - 2026-04-20
+
+### Fixed
+- **Bundle urllib3 locally**: Bundled urllib3 1.26.12 into addon to fix LibreELEC compatibility. Removed external `script.module.urllib3` dependency since minimal Kodi distros may not have it installed. urllib3 is now included in `resources/lib/` and imported locally before `requests` initialization.
 
 
 ## [1.0.0] - 2026-04-06

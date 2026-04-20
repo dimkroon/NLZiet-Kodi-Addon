@@ -89,6 +89,22 @@ rsync -a "${REPO_ROOT}/" "${TARGET_DIR}/" \
   --exclude '*.zip' \
   --exclude '.gitignore'
 
+# Ensure third-party dependencies are available to the checker/runtime by
+# installing them into the temporary target's resources/lib. This mirrors how
+# the addon should bundle dependencies for Kodi (or you can vendor them into
+# `resources/lib` in-source).
+mkdir -p "${TARGET_DIR}/resources/lib"
+echo "Installing runtime dependencies into ${TARGET_DIR}/resources/lib"
+if ! "${PYTHON_BIN}" -m pip install --upgrade pip setuptools wheel >/dev/null 2>&1; then
+  echo "WARNING: failed to upgrade pip in the current Python environment; continuing" >&2
+fi
+if ! "${PYTHON_BIN}" -m pip install -t "${TARGET_DIR}/resources/lib" requests >/dev/null 2>&1; then
+  echo "ERROR: failed to install 'requests' into ${TARGET_DIR}/resources/lib." >&2
+  echo "Either ensure the current Python can install packages, or vendor 'requests' into resources/lib:" >&2
+  echo "  pip install -t resources/lib requests" >&2
+  exit 1
+fi
+
 for branch in "${BRANCHES[@]}"; do
   echo "=== addon-checker ${branch} START $(date -Iseconds) ==="
   "${CHECKER_BIN}" "${TARGET_DIR}" --branch "${branch}" "${EXTRA_ARGS[@]}"
@@ -96,7 +112,7 @@ for branch in "${BRANCHES[@]}"; do
 done
 
 echo "=== compileall START $(date -Iseconds) ==="
-"${PYTHON_BIN}" -m compileall "${REPO_ROOT}/default.py" "${REPO_ROOT}/resources"
+"${PYTHON_BIN}" -m compileall "${TARGET_DIR}/default.py" "${TARGET_DIR}/resources"
 echo "=== compileall END $(date -Iseconds) ==="
 
 echo "Local addon-check workflow completed successfully."

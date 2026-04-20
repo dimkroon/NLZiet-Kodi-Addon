@@ -16,13 +16,27 @@ import os
 import sys
 import json
 import time
+import xbmcaddon
+
+# Add local lib directory first so bundled urllib3 is found
+local_lib_path = os.path.join(os.path.dirname(__file__))
+if local_lib_path not in sys.path:
+    sys.path.insert(0, local_lib_path)
+
+# Ensure script.module.requests is in sys.path for Kodi addon dependencies
+try:
+    addon = xbmcaddon.Addon('script.module.requests')
+    addon_path = addon.getAddonInfo('path')
+    sys.path.insert(0, os.path.join(addon_path, 'lib'))
+except Exception:
+    pass
+
 import requests
 import urllib.request
 import urllib.parse
 import urllib.error
 import http.cookiejar
 import xbmcvfs
-import xbmcaddon
 import xbmc
 import xbmcgui
 import traceback
