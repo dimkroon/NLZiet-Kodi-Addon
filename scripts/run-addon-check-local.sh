@@ -105,6 +105,16 @@ if ! "${PYTHON_BIN}" -m pip install -t "${TARGET_DIR}/resources/lib" requests >/
   exit 1
 fi
 
+# Clean up pip-installed cache/compiled artifacts that are not allowed in addons
+find "${TARGET_DIR}/resources/lib" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+find "${TARGET_DIR}/resources/lib" -name "*.pyc" -delete 2>/dev/null || true
+find "${TARGET_DIR}/resources/lib" -name "*.pyo" -delete 2>/dev/null || true
+find "${TARGET_DIR}/resources/lib" -name "*.so" -delete 2>/dev/null || true
+find "${TARGET_DIR}/resources/lib" -name "*.pem" -delete 2>/dev/null || true
+find "${TARGET_DIR}/resources/lib" -name "py.typed" -delete 2>/dev/null || true
+find "${TARGET_DIR}/resources/lib" -type d -name "bin" -exec rm -rf {} + 2>/dev/null || true
+find "${TARGET_DIR}/resources/lib" -type f -name "*__mypyc*" -delete 2>/dev/null || true
+
 for branch in "${BRANCHES[@]}"; do
   echo "=== addon-checker ${branch} START $(date -Iseconds) ==="
   "${CHECKER_BIN}" "${TARGET_DIR}" --branch "${branch}" "${EXTRA_ARGS[@]}"
