@@ -69,3 +69,35 @@ msgstr "Ondertitels standaard inschakelen"
 msgctxt "#30111"
 msgid "HTTP-verzoeken foutopsporing"
 msgstr "HTTP-verzoeken foutopsporing"
+
+msgctxt "#30130"
+msgid "TV Integration"
+msgstr ""
+
+msgctxt "#30131"
+msgid "Install IPTV Manager"
+msgstr ""
+
+msgctxt "#30132"
+msgid "Enable IPTV Manager integration"
+msgstr ""
+
+msgctxt "#30133"
+msgid "Go to IPTV Manager settings"
+msgstr ""
+
+msgctxt "#30134"
+msgid "Select channels"
+msgstr ""
+
+msgctxt "#30135"
+msgid "Select channels to include in Kodi's TV section\nIt can take several hours before changes take effect."
+msgstr ""
+
+# -------------
+# Comon strings
+# -------------
+
+msgctxt "#33001"
+msgid "This program is not yet available."
+msgstr ""
